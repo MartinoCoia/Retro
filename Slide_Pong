@@ -1,0 +1,100 @@
+#include "ESP32S3VGA.h"
+#include <GfxWrapper.h>
+//#include <Fonts/FreeMono9pt7b.h>  // Small custom font for the scoreboard
+
+// PinConfig and mode configuration
+const PinConfig pins(-1, -1, -1, -1, 1, -1, -1, -1, -1, -1, 2, -1, -1, -1, -1, 3, 10, 11);
+VGA vga;
+Mode mode = Mode::MODE_320x240x60;
+GfxWrapper<VGA> gfx(vga, mode.hRes, mode.vRes);
+
+// Button pins for LilyGo T-Display S3
+const int buttonPlayer1 = 0;  // GPIO pin 0 (Player 1)
+const int buttonPlayer2 = 14; // GPIO pin 14 (Player 2)
+
+// Pong game state
+int ballX = 160, ballY = 120;
+int ballSpeedX = 2, ballSpeedY = 2;
+float paddle1Y = 100, paddle2Y = 100;  // Using float for gradual movement
+const int paddleHeight = 40, paddleWidth = 10;
+int player1Score = 0, player2Score = 0;
+const int paddleSpeed = 4;  // Speed at which paddles move
+
+void setup() {
+    // Initialize buttons as input
+    pinMode(buttonPlayer1, INPUT_PULLUP);
+    pinMode(buttonPlayer2, INPUT_PULLUP);
+
+    vga.bufferCount = 2;
+    if (!vga.init(pins, mode, 16)) while (1) delay(1);
+
+    vga.start();
+    //gfx.setFont(&FreeMono9pt7b);  // Use a small custom font for the scoreboard
+}
+
+void loop() {
+    vga.clear(vga.rgb(255, 255, 255));  // Set the background to white
+
+    // Gradual movement for Player 1's paddle
+    if (digitalRead(buttonPlayer1) == LOW) {
+        if (paddle1Y > 0) paddle1Y -= paddleSpeed;  // Move up
+        if (paddle1Y < 0) paddle1Y = 0;  // Stop at the top
+    } else {
+        if (paddle1Y < mode.vRes - paddleHeight) paddle1Y += paddleSpeed;  // Move down
+        if (paddle1Y > mode.vRes - paddleHeight) paddle1Y = mode.vRes - paddleHeight;  // Stop at the bottom
+    }
+
+    // Gradual movement for Player 2's paddle
+    if (digitalRead(buttonPlayer2) == LOW) {
+        if (paddle2Y > 0) paddle2Y -= paddleSpeed;  // Move up
+        if (paddle2Y < 0) paddle2Y = 0;  // Stop at the top
+    } else {
+        if (paddle2Y < mode.vRes - paddleHeight) paddle2Y += paddleSpeed;  // Move down
+        if (paddle2Y > mode.vRes - paddleHeight) paddle2Y = mode.vRes - paddleHeight;  // Stop at the bottom
+    }
+
+    // Draw paddles
+    gfx.fillRect(0, paddle1Y, paddleWidth, paddleHeight, vga.rgb(255, 255, 0));  // Move the left paddle all the way to the edge (Player 1)
+    gfx.fillRect(mode.hRes - paddleWidth - 5, paddle2Y, paddleWidth, paddleHeight, vga.rgb(255, 255, 0));  // Right paddle moved slightly left (Player 2)
+
+    // Draw the ball (Red ball)
+    gfx.fillRect(ballX, ballY, 5, 5, vga.rgb(255, 0, 0));  // Red ball
+
+    // Ball movement
+    ballX += ballSpeedX;
+    ballY += ballSpeedY;
+
+    // Ball collision with walls
+    if (ballY <= 0 || ballY >= mode.vRes - 5) ballSpeedY = -ballSpeedY;  // Bounce off top and bottom walls
+
+    // Ball collision with paddles
+    if (ballX <= 10 && ballY >= paddle1Y && ballY <= paddle1Y + paddleHeight) ballSpeedX = -ballSpeedX;  // Bounce off left paddle
+    if (ballX >= mode.hRes - paddleWidth - 5 && ballY >= paddle2Y && ballY <= paddle2Y + paddleHeight) ballSpeedX = -ballSpeedX;  // Bounce off right paddle
+
+    // Scoring logic
+    if (ballX < 0) {
+        player2Score++;
+        resetBall();
+    } else if (ballX > mode.hRes) {
+        player1Score++;
+        resetBall();
+    }
+
+    // Display scoreboard (Green scoreboard)
+    gfx.setTextColor(vga.rgb(0, 255, 0));  // Set text color to green
+    gfx.setCursor(50, 30);
+    gfx.print("Player 1: ");
+    gfx.print(player1Score);
+    gfx.setCursor(mode.hRes - 150, 30);
+    gfx.print("Player 2: ");
+    gfx.print(player2Score);
+
+    vga.show();
+}
+
+// Function to reset the ball to the center after a point is scored
+void resetBall() {
+    ballX = mode.hRes / 2;
+    ballY = mode.vRes / 2;
+    ballSpeedX = -ballSpeedX;  // Reverse direction
+}
